@@ -1,0 +1,151 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PropertyOps Hub API",
+    "version": "v1",
+    "description": "Multi-unit hospitality operations platform API for material control, sales ingestion, cost control, ERP journal export, and IT interface health monitoring."
+  },
+  "servers": [
+    {
+      "url": "https://localhost:5001",
+      "description": "Local Development Server"
+    }
+  ],
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Authenticate user and issue JWT and refresh tokens",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful login with access and refresh tokens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/material-control/items": {
+      "get": {
+        "tags": ["Material Control"],
+        "summary": "List catalog items for active property tenant",
+        "responses": {
+          "200": {
+            "description": "Paginated list of inventory items"
+          }
+        }
+      },
+      "post": {
+        "tags": ["Material Control"],
+        "summary": "Create a new inventory item",
+        "responses": {
+          "201": {
+            "description": "Item created successfully"
+          }
+        }
+      }
+    },
+    "/api/material-control/goods-receipts": {
+      "post": {
+        "tags": ["Material Control"],
+        "summary": "Process goods receipt note (GRN), updates weighted average cost and ledger",
+        "responses": {
+          "201": {
+            "description": "GRN processed and stock movements appended"
+          }
+        }
+      }
+    },
+    "/api/sales/ingest": {
+      "post": {
+        "tags": ["Sales Ingestion"],
+        "summary": "Ingest POS sales checks (idempotent)",
+        "responses": {
+          "200": {
+            "description": "Sales checks ingested or skipped if duplicate"
+          }
+        }
+      }
+    },
+    "/api/cost-control/variance": {
+      "get": {
+        "tags": ["Cost Control"],
+        "summary": "Get theoretical vs actual usage variance analysis",
+        "responses": {
+          "200": {
+            "description": "Variance report by item and outlet"
+          }
+        }
+      }
+    },
+    "/api/finance/journals/export": {
+      "post": {
+        "tags": ["Finance"],
+        "summary": "Generate balanced journal batch and export to ERP",
+        "responses": {
+          "200": {
+            "description": "Journal batch balanced and exported"
+          }
+        }
+      }
+    },
+    "/api/it-ops/interfaces": {
+      "get": {
+        "tags": ["IT Operations"],
+        "summary": "Get live health status of all POS/PMS/ERP interfaces",
+        "responses": {
+          "200": {
+            "description": "List of integration interfaces with Green/Amber/Red health metrics"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LoginRequest": {
+        "type": "object",
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" }
+        },
+        "required": ["email", "password"]
+      },
+      "AuthResponse": {
+        "type": "object",
+        "properties": {
+          "accessToken": { "type": "string" },
+          "refreshToken": { "type": "string" },
+          "expiresAtUtc": { "type": "string", "format": "date-time" },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string", "format": "uuid" },
+              "email": { "type": "string" },
+              "role": { "type": "string" },
+              "propertyId": { "type": "string", "format": "uuid" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
