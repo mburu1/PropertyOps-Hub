@@ -1,0 +1,21 @@
+# Build context for src/PropertyOpsHub.Api/Dockerfile (repository root).
+# Anything not needed to compile the API is excluded.
+
+.git
+.github
+.vscode
+docs
+tests
+tools
+src/PropertyOpsHub.Web
+
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/.angular
+
+*.sln
+README.md
+LICENSE
+docker-compose*.yml

@@ -1,0 +1,160 @@
+name: Frontend CI/CD
+
+# CI and CD for the Angular workspace in one workflow:
+#
+#   build-test      npm ci -> production build -> unit tests -> dist artifact
+#   publish-image   (needs: build-test) Dockerfile -> GHCR (nginx + bundle) -> smoke test
+#
+# `publish-image` runs only for pushes to main and for v*.*.* tags.
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # The Angular CLI must not try to prompt for analytics on a runner.
+  NG_CLI_ANALYTICS: 'false'
+  CI: 'true'
+
+jobs:
+  build-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: src/PropertyOpsHub.Web
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          # Angular 22.2 requires ^22.22.3 || ^24.15.0 || >=26; Node 24 is the safe LTS line.
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: src/PropertyOpsHub.Web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build (production)
+        # angular.json has defaultConfiguration=production, so this is a production build.
+        run: npm run build
+
+      - name: Test
+        run: npx ng test --watch=false
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: src/PropertyOpsHub.Web/dist/PropertyOpsHub.Web/browser
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-image:
+    name: Publish image
+    needs: build-test
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      REGISTRY: ghcr.io
+      DOCKERFILE: src/PropertyOpsHub.Web/Dockerfile
+      IMAGE_SUFFIX: propertyops-hub-web
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image name
+        # GHCR requires a lowercase name; the repository name is PropertyOps-Hub.
+        id: image
+        run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=PropertyOps Hub Web
+            org.opencontainers.image.description=Angular frontend for PropertyOps Hub, served by nginx
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: src/PropertyOpsHub.Web
+          file: ${{ env.DOCKERFILE }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Smoke-test the image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker run --rm -d --name web-smoke -p 8081:80 "$IMAGE"
+          code=000
+          for attempt in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/ || true)
+            if [ "$code" = "200" ]; then
+              echo "nginx served index.html after ${attempt}s"
+              break
+            fi
+            sleep 1
+          done
+          if [ "$code" != "200" ]; then
+            echo "::error::nginx did not serve the app (last status $code)"
+            docker logs web-smoke
+            docker rm -f web-smoke
+            exit 1
+          fi
+          # The SPA shell must contain the Angular root element.
+          if ! curl -s http://127.0.0.1:8081/ | grep -q '<app-root'; then
+            echo "::error::index.html is missing <app-root>"
+            docker rm -f web-smoke
+            exit 1
+          fi
+          docker rm -f web-smoke

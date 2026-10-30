@@ -1,0 +1,197 @@
+name: Backend CI/CD
+
+# CI and CD for the .NET solution in one workflow, so the image is only published
+# after the same commit has built and passed its tests:
+#
+#   build-test      restore -> build (Release) -> test + coverage -> publish artifact
+#   publish-image   (needs: build-test) Dockerfile -> GHCR -> smoke test
+#
+# Every push / pull request / manual run executes `build-test`.
+# `publish-image` runs only for pushes to main and for v*.*.* tags.
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  # Pull requests supersede each other; main and tag runs must finish.
+  group: backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  CONFIGURATION: Release
+  SOLUTION: PropertyOpsHub.sln
+
+jobs:
+  build-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          # Installs the newest 10.0 feature band. global.json pins 10.0.403 with
+          # rollForward=latestFeature, so any 10.0.4xx SDK satisfies it.
+          dotnet-version: '10.0.x'
+
+      - name: Report SDK in use
+        # Fails fast with a readable message if global.json cannot be resolved.
+        run: |
+          dotnet --version
+          dotnet --info
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          # Central package management: Directory.Packages.props defines every version.
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION }}
+
+      - name: Build
+        run: dotnet build ${{ env.SOLUTION }} --no-restore --configuration ${{ env.CONFIGURATION }}
+
+      - name: Test
+        run: >
+          dotnet test ${{ env.SOLUTION }}
+          --no-build
+          --configuration ${{ env.CONFIGURATION }}
+          --logger trx
+          --results-directory ./TestResults
+          --collect:"XPlat Code Coverage"
+          --verbosity normal
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: |
+            TestResults/**/*.trx
+            TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish API
+        # Deployable output, kept as a workflow artifact for manual/rollback deploys.
+        run: >
+          dotnet publish src/PropertyOpsHub.Api/PropertyOpsHub.Api.csproj
+          --configuration ${{ env.CONFIGURATION }}
+          -p:UseAppHost=false
+          --output ./artifacts/api
+
+      - name: Upload API artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-publish
+          path: ./artifacts/api
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-image:
+    name: Publish image
+    needs: build-test
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      REGISTRY: ghcr.io
+      DOCKERFILE: src/PropertyOpsHub.Api/Dockerfile
+      IMAGE_SUFFIX: propertyops-hub-api
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image name
+        # GHCR requires a lowercase name; the repository name is PropertyOps-Hub.
+        id: image
+        run: echo "name=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_SUFFIX}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=PropertyOps Hub API
+            org.opencontainers.image.description=.NET 10 Web API for PropertyOps Hub
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Smoke-test the image
+        # Any response below 500 proves the host started and routing works
+        # (a bare HTTP container answers with app.UseHttpsRedirection in play).
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker run --rm -d --name api-smoke -p 8080:8080 "$IMAGE"
+          code=000
+          for attempt in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/WeatherForecast || true)
+            if [ "$code" != "000" ]; then
+              echo "API answered with HTTP $code after ${attempt}s"
+              break
+            fi
+            sleep 1
+          done
+          if [ "$code" = "000" ] || [ "$code" -ge 500 ]; then
+            echo "::error::Container did not serve the API (last status $code)"
+            docker logs api-smoke
+            docker rm -f api-smoke
+            exit 1
+          fi
+          docker rm -f api-smoke

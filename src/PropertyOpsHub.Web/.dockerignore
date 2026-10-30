@@ -1,0 +1,8 @@
+# Build context for src/PropertyOpsHub.Web/Dockerfile.
+# Dependencies are installed inside the image, so local copies are excluded.
+
+node_modules
+dist
+.angular
+.vscode
+npm-debug.log*

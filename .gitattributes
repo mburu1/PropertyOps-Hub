@@ -1,0 +1,31 @@
+# Line-ending policy.
+# Git stores text files with LF; the checkout honours the per-type rules below.
+* text=auto
+
+# CRLF breaks these formats in CI (Docker RUN continuations, bash steps, nginx conf).
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.conf text eol=lf
+.dockerignore text eol=lf
+Dockerfile text eol=lf
+*.dockerfile text eol=lf
+*.cs text eol=lf
+*.csproj text eol=lf
+*.props text eol=lf
+*.json text eol=lf
+
+# Windows-native tooling prefers its own endings.
+*.sln text eol=crlf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets must never be normalised.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.gif binary
+*.woff binary
+*.woff2 binary
