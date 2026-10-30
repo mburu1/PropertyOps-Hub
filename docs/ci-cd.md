@@ -100,7 +100,8 @@ set in the shell; exporting `APPDATA` / `LOCALAPPDATA` (or setting `NUGET_PACKAG
 | Frontend `npm run build` | Passed, `dist/PropertyOpsHub.Web/browser` (~217 kB initial) |
 | Frontend `npx ng test --watch=false` | Passed, 1 file / 2 tests |
 | Workflow YAML | Parsed with a YAML parser; shell blocks checked with `bash -n` |
-| Docker image builds | **Not verified locally** — the Docker daemon is not running on the authoring machine. The `smoke-test` steps cover this on the first run. |
+| Docker image builds | Verified on the first CI run: both images built, were pushed to GHCR and passed the container smoke test |
+| First remote run (2026-10-30) | `Backend CI/CD` #1 and `Frontend CI/CD` #1: all four jobs succeeded (`Build & test` + `Publish image` in both) |
 
 ## Known gaps and warnings
 
@@ -115,6 +116,9 @@ set in the shell; exporting `APPDATA` / `LOCALAPPDATA` (or setting `NUGET_PACKAG
 - **No e2e job:** `tests/e2e` is empty, so Playwright is not wired into CI yet.
 - **CD stops at the registry.** Deployment to an environment (ACA, App Service, k3s) needs a
   target and credentials, and is intentionally out of scope.
+- **GHCR package visibility defaults to private.** The images are pushed with the workflow
+  token, so they start private; set each package to public in the package settings if you
+  want anonymous `docker pull` (for example from `docker-compose` on another host).
 - **`README.md` is stale** on workflow names. It could not be edited in this session because
   the file contains an example SQL Server SA password line and the workspace write guard
   rejects credential-shaped values. Replacing that example with an environment-variable
