@@ -1,0 +1,11 @@
+@PropertyOpsHub.Api_HostAddress = http://localhost:5083
+
+GET {{PropertyOpsHub.Api_HostAddress}}/openapi/v1.json
+Accept: application/json
+
+###
+
+GET {{PropertyOpsHub.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

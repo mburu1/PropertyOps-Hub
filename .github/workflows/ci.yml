@@ -1,0 +1,42 @@
+﻿name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore PropertyOpsHub.sln
+
+      - name: Build
+        run: dotnet build PropertyOpsHub.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test PropertyOpsHub.sln --no-build --configuration Release --verbosity normal
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/PropertyOpsHub.Web/package-lock.json
+
+      - name: Install Frontend Dependencies
+        working-directory: src/PropertyOpsHub.Web
+        run: npm ci
+
+      - name: Build Frontend
+        working-directory: src/PropertyOpsHub.Web
+        run: npm run build
