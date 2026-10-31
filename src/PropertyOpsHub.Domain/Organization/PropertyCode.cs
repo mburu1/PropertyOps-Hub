@@ -18,26 +18,40 @@ public sealed class PropertyCode : ValueObject
 
     public static PropertyCode Create(string? code)
     {
+        if (!TryCreate(code, out var result))
+        {
+            throw new DomainException(
+                "organization.property.code_invalid",
+                $"Property code must be {MinLength}-{MaxLength} characters of letters, digits and hyphens.");
+        }
+
+        return result!;
+    }
+
+    /// <summary>
+    /// Non-throwing variant used by request validators, where an invalid code is an expected
+    /// outcome rather than an exceptional one.
+    /// </summary>
+    public static bool TryCreate(string? code, out PropertyCode? result)
+    {
+        result = null;
         var value = (code ?? string.Empty).Trim().ToUpperInvariant();
 
         if (value.Length is < MinLength or > MaxLength)
         {
-            throw new DomainException(
-                "organization.property.code_invalid",
-                $"Property code must be {MinLength}-{MaxLength} characters long.");
+            return false;
         }
 
         foreach (var character in value)
         {
             if (!char.IsAsciiLetterUpper(character) && !char.IsAsciiDigit(character) && character != '-')
             {
-                throw new DomainException(
-                    "organization.property.code_invalid",
-                    "Property code may contain only letters, digits and hyphens.");
+                return false;
             }
         }
 
-        return new PropertyCode(value);
+        result = new PropertyCode(value);
+        return true;
     }
 
     public override string ToString() => Value;

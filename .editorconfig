@@ -405,3 +405,8 @@ dotnet_diagnostic.CA2007.severity = none
 # in VB, and this codebase is C# only.
 [src/PropertyOpsHub.Domain/**/*.cs]
 dotnet_diagnostic.CA1716.severity = none
+
+# `Error` is the result-pattern failure type and `Property` is the domain term; both
+# clash with VB keywords only, and this codebase is C#.
+[src/PropertyOpsHub.Application/**/*.cs]
+dotnet_diagnostic.CA1716.severity = none

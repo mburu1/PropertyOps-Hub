@@ -1,13 +1,27 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <ItemGroup>
-    <ProjectReference Include="..\PropertyOpsHub.Domain\PropertyOpsHub.Domain.csproj" />
-  </ItemGroup>
-
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      MediatR is pinned to the last Apache-2.0 release (see Directory.Packages.props).
+      FluentValidation stays here rather than in Infrastructure because validators are
+      use-case rules, not framework concerns.
+    -->
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <!-- Declared explicitly because the application layer composes DI and logs directly. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PropertyOpsHub.Domain\PropertyOpsHub.Domain.csproj" />
+  </ItemGroup>
 
 </Project>
