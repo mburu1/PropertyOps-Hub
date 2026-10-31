@@ -387,3 +387,21 @@ dotnet_naming_style.s_camelcase.required_suffix =
 dotnet_naming_style.s_camelcase.word_separator = 
 dotnet_naming_style.s_camelcase.capitalization = camel_case
 
+
+# ---------------------------------------------------------------------------
+# Project-specific overrides
+# ---------------------------------------------------------------------------
+
+# Test method names use Given_When_Then underscores on purpose: they read as
+# sentences in the test explorer and failure output.
+[tests/**/*.cs]
+dotnet_diagnostic.CA1707.severity = none
+# Test classes are discovered by xUnit, not called by consumers.
+dotnet_diagnostic.CA1515.severity = none
+# Tests may await nothing / use fire-and-forget assertions deliberately.
+dotnet_diagnostic.CA2007.severity = none
+
+# `Property` is the domain term for a hotel or site. It is a reserved keyword only
+# in VB, and this codebase is C# only.
+[src/PropertyOpsHub.Domain/**/*.cs]
+dotnet_diagnostic.CA1716.severity = none
