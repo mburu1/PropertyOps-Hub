@@ -114,6 +114,11 @@ set in the shell; exporting `APPDATA` / `LOCALAPPDATA` (or setting `NUGET_PACKAG
 - **No linter gate:** `prettier --check` currently fails on 8 Angular files, so formatting is
   not enforced until the codebase is formatted once.
 - **No e2e job:** `tests/e2e` is empty, so Playwright is not wired into CI yet.
+- **The image smoke test needs runtime configuration.** Since the API refuses to start
+  without `Jwt__SigningKey` and `ConnectionStrings__SqlServer` (fail closed on purpose), the
+  container smoke step in `backend.yml` must pass both. Until it does, `Publish image` reports
+  a failure *after* the image has already been pushed, and it still probes the removed
+  `/WeatherForecast` route; the assertion should target `/health` instead.
 - **CD stops at the registry.** Deployment to an environment (ACA, App Service, k3s) needs a
   target and credentials, and is intentionally out of scope.
 - **GHCR package visibility defaults to private.** The images are pushed with the workflow
