@@ -1,6 +1,8 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using PropertyOpsHub.Api.ErrorHandling;
 using PropertyOpsHub.Api.Extensions;
+using PropertyOpsHub.Api.Logging;
 using PropertyOpsHub.Api.Security;
 using PropertyOpsHub.Application;
 using PropertyOpsHub.Application.Abstractions;
@@ -37,7 +39,26 @@ builder.Services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(connectionString);
-builder.Services.AddJwtAuthentication(builder.Configuration);
+
+// Authentication is a capability, not a prerequisite for booting: an instance without a signing
+// key starts, reports itself unready and refuses every protected endpoint. Crashing instead
+// would only show a restart counter.
+var authentication = AuthenticationState.From(builder.Configuration);
+builder.Services.AddSingleton(authentication);
+
+if (authentication.IsConfigured)
+{
+    builder.Services.AddJwtAuthentication(builder.Configuration);
+}
+else
+{
+    builder.Services
+        .AddAuthentication(UnconfiguredAuthenticationHandler.SchemeName)
+        .AddScheme<AuthenticationSchemeOptions, UnconfiguredAuthenticationHandler>(
+            UnconfiguredAuthenticationHandler.SchemeName,
+            configureOptions: null);
+}
+
 builder.Services.AddAuthorizationPolicies();
 builder.Services.AddApiRateLimiting();
 builder.Services.AddHealthChecks();
@@ -46,6 +67,11 @@ builder.Services.AddHealthChecks();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+if (!authentication.IsConfigured)
+{
+    ApiLogMessages.AuthenticationNotConfigured(app.Logger, authentication.Problem);
+}
 
 app.UseExceptionHandler();
 app.UseProblemDetailsForStatusCodes();
@@ -69,8 +95,20 @@ app.UseRateLimiter();
 
 app.MapControllers();
 
-// Liveness only: no database probe, so a saturated database does not restart healthy pods.
+// Liveness: is the process up? No database probe, so a saturated database does not restart
+// healthy pods.
 app.MapHealthChecks("/health").AllowAnonymous();
+
+// Readiness: can this instance actually serve traffic? Today that means "has credentials".
+app.MapGet(
+        "/ready",
+        (AuthenticationState state) => state.IsConfigured
+            ? Results.Ok(new { status = "ready" })
+            : Results.Json(
+                new { status = "not_ready", problems = new[] { state.Problem } },
+                statusCode: StatusCodes.Status503ServiceUnavailable))
+    .AllowAnonymous()
+    .WithName("Readiness");
 
 app.Run();
 

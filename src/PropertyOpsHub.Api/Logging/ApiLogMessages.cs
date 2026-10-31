@@ -27,4 +27,10 @@ internal static partial class ApiLogMessages
         string method,
         string path,
         string traceId);
+
+    [LoggerMessage(
+        EventId = 2003,
+        Level = LogLevel.Critical,
+        Message = "Authentication is not configured: {Problem} Every protected endpoint answers 401 and /ready reports not_ready.")]
+    internal static partial void AuthenticationNotConfigured(ILogger logger, string? problem);
 }
