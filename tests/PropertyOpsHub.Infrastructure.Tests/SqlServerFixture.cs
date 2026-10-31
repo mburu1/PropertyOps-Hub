@@ -32,6 +32,14 @@ public sealed class SqlServerFixture : IAsyncLifetime
 
         if (string.IsNullOrWhiteSpace(server))
         {
+            // LocalDB only exists on Windows. On any other platform the tests are skipped
+            // unless a real SQL Server is supplied through PROPERTYOPS_TEST_SQL.
+            if (!OperatingSystem.IsWindows())
+            {
+                ConnectionString = null;
+                return;
+            }
+
             server = LocalDbDefault;
         }
 
@@ -50,9 +58,11 @@ public sealed class SqlServerFixture : IAsyncLifetime
 
             ConnectionString = connectionString;
         }
-        catch (Exception exception) when (exception is SqlException or InvalidOperationException)
+        catch (Exception exception)
+            when (exception is SqlException or InvalidOperationException or PlatformNotSupportedException)
         {
-            // No SQL Server available on this machine; the tests no-op rather than pretend.
+            // No SQL Server on this machine (LocalDB does not exist on Linux runners), so the
+            // tests no-op instead of failing. Set PROPERTYOPS_TEST_SQL to run them for real.
             ConnectionString = null;
         }
     }
